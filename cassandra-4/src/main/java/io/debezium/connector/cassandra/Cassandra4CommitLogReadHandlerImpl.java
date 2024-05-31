@@ -35,12 +35,14 @@ import org.apache.cassandra.db.marshal.CollectionType;
 import org.apache.cassandra.db.marshal.ListType;
 import org.apache.cassandra.db.marshal.MapType;
 import org.apache.cassandra.db.marshal.SetType;
+import org.apache.cassandra.db.marshal.UserType;
 import org.apache.cassandra.db.partitions.PartitionUpdate;
 import org.apache.cassandra.db.rows.ComplexColumnData;
 import org.apache.cassandra.db.rows.RangeTombstoneBoundMarker;
 import org.apache.cassandra.db.rows.Row;
 import org.apache.cassandra.db.rows.Unfiltered;
 import org.apache.cassandra.db.rows.UnfilteredRowIterator;
+import org.apache.cassandra.transport.ProtocolVersion;
 import org.apache.cassandra.utils.ByteBufferUtil;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.kafka.connect.data.Schema;
@@ -551,9 +553,12 @@ public class Cassandra4CommitLogReadHandlerImpl implements CommitLogReadHandler 
                     if (abstractType.isCollection() && abstractType.isMultiCell()) {
                         ComplexColumnData ccd = row.getComplexColumnData(cd);
                         value = CassandraTypeDeserializer.deserialize((CollectionType<?>) abstractType, getComplexColumnDataByteBufferList(abstractType, ccd));
-                    }
-                    else {
-                        org.apache.cassandra.db.rows.Cell<?> cell = row.getCell(cd);
+                    } else if (abstractType.isUDT()) {
+                        UserType ut = (UserType) abstractType;
+                        value = CassandraTypeDeserializer.deserialize(
+                                ut, ut.serializeForNativeProtocol(row.getComplexColumnData(cd).iterator(), ProtocolVersion.V5));
+                    } else {
+                        org.apache.cassandra.db.rows.Cell cell = row.getCell(cd);
                         value = cell.isTombstone() ? null : CassandraTypeDeserializer.deserialize(abstractType, cell.buffer());
                         deletionTs = cell.isExpiring() ? TimeUnit.MICROSECONDS.convert(cell.localDeletionTime(), TimeUnit.SECONDS) : null;
                     }
